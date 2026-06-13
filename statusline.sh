@@ -285,12 +285,4 @@ PY
   fi
 fi
 
-# Context window remaining.
-ctx_rem=$(echo "$input" | jq -r '.context_window.remaining_percentage // empty')
-ctx_rem_str=""
-if [ -n "$ctx_rem" ]; then
-  ctx_rem_int=$(printf '%.0f' "$ctx_rem")
-  ctx_rem_str=" | ctx:${ctx_rem_int}%"
-fi
-
-printf "🤖 %s%s%s%s%s%s" "$model" "$branch_str" "$project_str" "$ctx_str" "$rate_str" "$ctx_rem_str"
+printf "🤖 %s%s%s%s%s" "$model" "$branch_str" "$project_str" "$ctx_str" "$rate_str"

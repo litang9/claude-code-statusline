@@ -4,7 +4,7 @@ Personal Claude Code statusline with:
 
 - model name normalization
 - git branch and project name
-- context window usage and remaining percentage
+- context window usage
 - Claude.ai native 5h/7d rate limit display
 - Kimi Code Coding Plan 5h/7d quota fallback
 - BigModel GLM Coding Plan 5h/7d quota fallback
@@ -53,7 +53,7 @@ export CLAUDE_KIMI_CODE_USAGE_TTL=120
 For Kimi Code, the statusline shows remaining quota like:
 
 ```text
-🤖 Kimi | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 7d:98% | ctx:80%
+🤖 Kimi | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 7d:98%
 ```
 
 ## BigModel GLM Quota
@@ -79,5 +79,5 @@ export CLAUDE_BIGMODEL_QUOTA_TTL=120
 For GLM, the statusline shows remaining quota like:
 
 ```text
-🤖 GLM | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 7d:99% | ctx:80%
+🤖 GLM | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 7d:99%
 ```
