@@ -1,6 +1,40 @@
 #!/bin/bash
 input=$(cat)
 
+# Format seconds as a short countdown: DdHh / HhMm / Mm / Ss.
+format_countdown() {
+  local sec=$1
+  { [ -z "$sec" ] || [ "$sec" -le 0 ]; } && return
+  local d=$(( sec / 86400 ))
+  local h=$(( (sec % 86400) / 3600 ))
+  local m=$(( (sec % 3600) / 60 ))
+  local s=$(( sec % 60 ))
+  if   [ "$d" -gt 0 ]; then printf '%dd%dh' "$d" "$h"
+  elif [ "$h" -gt 0 ]; then printf '%dh%dm' "$h" "$m"
+  elif [ "$m" -gt 0 ]; then printf '%dm'     "$m"
+  else                      printf '%ds'     "$s"
+  fi
+}
+
+# Build "REM% 🕙CD" from used-pct and reset-epoch-ms (either may be empty).
+fmt_rate() {
+  local used_pct=$1 reset_ms=$2
+  [ -z "$used_pct" ] && return
+  local used_int rem_int
+  used_int=$(printf '%.0f' "$used_pct")
+  rem_int=$(( 100 - used_int ))
+  local out="${rem_int}%"
+  if [ -n "$reset_ms" ] && [ "$reset_ms" -gt 0 ]; then
+    local now_s reset_s rem_sec cd
+    now_s=$(date +%s)
+    reset_s=$(( reset_ms / 1000 ))
+    rem_sec=$(( reset_s - now_s ))
+    cd=$(format_countdown "$rem_sec")
+    [ -n "$cd" ] && out="${out} 🕙 ${cd}"
+  fi
+  printf '%s' "$out"
+}
+
 # Model name — extract short name.
 model=$(echo "$input" | jq -r '.model.display_name // .model.id // "unknown"')
 case "$model" in
@@ -48,16 +82,14 @@ fi
 # Claude.ai 5h/7d rate limits when Claude Code provides them.
 rate_5h=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 rate_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+rate_5h_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at_ms // .rate_limits.five_hour.reset_at_ms // empty')
+rate_7d_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at_ms // .rate_limits.seven_day.reset_at_ms // empty')
 rate_str=""
 if [ -n "$rate_5h" ]; then
-  used_5h=$(printf '%.0f' "$rate_5h")
-  rem_5h=$(( 100 - used_5h ))
-  rate_str=" | 5h:${rem_5h}%"
+  rate_str=" | 5h:$(fmt_rate "$rate_5h" "$rate_5h_reset")"
 fi
 if [ -n "$rate_7d" ]; then
-  used_7d=$(printf '%.0f' "$rate_7d")
-  rem_7d=$(( 100 - used_7d ))
-  rate_str="${rate_str} 7d:${rem_7d}%"
+  rate_str="${rate_str} 7d:$(fmt_rate "$rate_7d" "$rate_7d_reset")"
 fi
 
 # Kimi Code has its own coding-plan quota endpoint. Claude Code usually does
@@ -168,10 +200,39 @@ def is_five_hour_limit(item):
         or (duration == 5 and "HOUR" in time_unit)
     )
 
+def reset_ms_of(*sources):
+    """Best-effort reset timestamp across candidate records/fields.
+    Accepts epoch-ms (>1e12), epoch-s (<1e12 -> x1000), numeric strings,
+    or ISO 8601 strings (e.g. '2026-06-22T11:16:47Z')."""
+    from datetime import datetime, timezone
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        for key in ("nextResetTime", "resetAt", "resetsAt", "resetTime",
+                    "reset_time", "expiresAt", "expireTime", "expiredAt"):
+            v = src.get(key)
+            if v is None:
+                continue
+            n = to_num(v)
+            if n is not None and n > 0:
+                return int(n * 1000) if n < 1e12 else int(n)
+            if isinstance(v, str):
+                try:
+                    dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return int(dt.timestamp() * 1000)
+                except ValueError:
+                    continue
+    return None
+
 result = {}
 seven_day = pct_used(payload.get("usage"))
 if seven_day is not None:
     result["seven_day_used_percentage"] = seven_day
+    sd_reset = reset_ms_of(payload.get("usage"), payload)
+    if sd_reset is not None:
+        result["seven_day_reset_ms"] = sd_reset
 
 for item in payload.get("limits") or []:
     if not isinstance(item, dict) or not is_five_hour_limit(item):
@@ -180,6 +241,9 @@ for item in payload.get("limits") or []:
     five_hour = pct_used(row)
     if five_hour is not None:
         result["five_hour_used_percentage"] = five_hour
+        fh_reset = reset_ms_of(item, row, item.get("window") if isinstance(item.get("window"), dict) else {})
+        if fh_reset is not None:
+            result["five_hour_reset_ms"] = fh_reset
         break
 
 cache.parent.mkdir(parents=True, exist_ok=True)
@@ -195,15 +259,13 @@ PY
   if [ -f "$quota_cache" ]; then
     kimi_5h=$(jq -r '.five_hour_used_percentage // empty' "$quota_cache" 2>/dev/null)
     kimi_7d=$(jq -r '.seven_day_used_percentage // empty' "$quota_cache" 2>/dev/null)
+    kimi_5h_reset=$(jq -r '.five_hour_reset_ms // empty' "$quota_cache" 2>/dev/null)
+    kimi_7d_reset=$(jq -r '.seven_day_reset_ms // empty' "$quota_cache" 2>/dev/null)
     if [ -n "$kimi_5h" ]; then
-      kimi_used_5h=$(printf '%.0f' "$kimi_5h")
-      kimi_rem_5h=$(( 100 - kimi_used_5h ))
-      rate_str=" | 5h:${kimi_rem_5h}%"
+      rate_str=" | 5h:$(fmt_rate "$kimi_5h" "$kimi_5h_reset")"
     fi
     if [ -n "$kimi_7d" ]; then
-      kimi_used_7d=$(printf '%.0f' "$kimi_7d")
-      kimi_rem_7d=$(( 100 - kimi_used_7d ))
-      rate_str="${rate_str} 7d:${kimi_rem_7d}%"
+      rate_str="${rate_str} 7d:$(fmt_rate "$kimi_7d" "$kimi_7d_reset")"
     fi
   fi
 
@@ -272,15 +334,13 @@ PY
   if [ -f "$quota_cache" ]; then
     bm_5h=$(jq -r '.five_hour_used_percentage // empty' "$quota_cache" 2>/dev/null)
     bm_7d=$(jq -r '.seven_day_used_percentage // empty' "$quota_cache" 2>/dev/null)
+    bm_5h_reset=$(jq -r '.five_hour_reset_ms // empty' "$quota_cache" 2>/dev/null)
+    bm_7d_reset=$(jq -r '.seven_day_reset_ms // empty' "$quota_cache" 2>/dev/null)
     if [ -n "$bm_5h" ]; then
-      bm_used_5h=$(printf '%.0f' "$bm_5h")
-      bm_rem_5h=$(( 100 - bm_used_5h ))
-      rate_str=" | 5h:${bm_rem_5h}%"
+      rate_str=" | 5h:$(fmt_rate "$bm_5h" "$bm_5h_reset")"
     fi
     if [ -n "$bm_7d" ]; then
-      bm_used_7d=$(printf '%.0f' "$bm_7d")
-      bm_rem_7d=$(( 100 - bm_used_7d ))
-      rate_str="${rate_str} 7d:${bm_rem_7d}%"
+      rate_str="${rate_str} 7d:$(fmt_rate "$bm_7d" "$bm_7d_reset")"
     fi
   fi
 fi
