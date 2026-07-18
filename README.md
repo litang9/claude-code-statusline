@@ -36,6 +36,9 @@ Claude Code does not always populate `.rate_limits` when using Kimi Code's Anthr
 https://api.kimi.com/coding/v1/usages
 ```
 
+Kimi detection supports the `kimi`, `kimi-k2.7`, and `kimi-code` profile names,
+the `k3` model ID, and model IDs beginning with `kimi`.
+
 It reads the token in this order:
 
 1. `KIMI_CODE_API_KEY`
@@ -54,7 +57,7 @@ export CLAUDE_KIMI_CODE_USAGE_TTL=120
 For Kimi Code, the statusline shows remaining quota like:
 
 ```text
-🤖 Kimi | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 🕙 4h47m 7d:98% 🕙 6d12h
+🤖 K3 | 📂 repo | ██░░░░░░░░ 20% | 5h:96% 🕙 4h47m 7d:98% 🕙 6d12h
 ```
 
 ## BigModel GLM Quota
