@@ -1,0 +1,40 @@
+name: ShellCheck
+
+on:
+  pull_request:
+    paths:
+      - "**/*.sh"
+      - ".github/workflows/shellcheck.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.sh"
+      - ".github/workflows/shellcheck.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shellcheck-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends shellcheck
+
+      - name: Check Bash syntax
+        run: bash -n statusline.sh
+
+      - name: Run ShellCheck
+        run: shellcheck --severity=warning statusline.sh
