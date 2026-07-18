@@ -37,17 +37,27 @@ fmt_rate() {
 
 # Model name — extract short name.
 model=$(echo "$input" | jq -r '.model.display_name // .model.id // "unknown"')
+is_kimi=false
 case "$model" in
-  *kimi*|*Kimi*)   model="Kimi" ;;
+  *kimi*|*Kimi*)   model="Kimi"; is_kimi=true ;;
+  k3|K3)           model="K3"; is_kimi=true ;;
   *glm*|*GLM*)     model="GLM" ;;
   *sonnet*|*Sonnet*) model="Sonnet" ;;
   *opus*|*Opus*)     model="Opus" ;;
   *haiku*|*Haiku*)   model="Haiku" ;;
   *mimo*)            model="MiMo" ;;
 esac
-if [ "$CLAUDE_PROFILE" = "kimi-k2.7" ] || [ "$CLAUDE_PROFILE" = "kimi-code" ] || echo "${ANTHROPIC_MODEL:-}" | grep -qi '^kimi'; then
-  model="Kimi"
-elif [ "$CLAUDE_PROFILE" = "glm51" ] || echo "${ANTHROPIC_MODEL:-}" | grep -qi '^glm'; then
+case "${CLAUDE_PROFILE:-}" in
+  kimi|kimi-k2.7|kimi-code)
+    [ "$is_kimi" = false ] && model="Kimi"
+    is_kimi=true
+    ;;
+esac
+case "${ANTHROPIC_MODEL:-}" in
+  k3|K3) model="K3"; is_kimi=true ;;
+  kimi*|Kimi*) model="Kimi"; is_kimi=true ;;
+esac
+if [ "$CLAUDE_PROFILE" = "glm51" ] || echo "${ANTHROPIC_MODEL:-}" | grep -qi '^glm'; then
   model="GLM"
 fi
 
@@ -95,7 +105,7 @@ fi
 # Kimi Code has its own coding-plan quota endpoint. Claude Code usually does
 # not fill .rate_limits for third-party Anthropic-compatible providers, so
 # query Kimi Code's usage endpoint as a cached fallback.
-if [ -z "$rate_str" ] && { [ "$CLAUDE_PROFILE" = "kimi-k2.7" ] || [ "$CLAUDE_PROFILE" = "kimi-code" ] || echo "${ANTHROPIC_MODEL:-}$model" | grep -qi 'kimi'; }; then
+if [ -z "$rate_str" ] && [ "$is_kimi" = true ]; then
   quota_cache="${TMPDIR:-/tmp}/claude-kimi-code-usage.json"
   quota_ttl="${CLAUDE_KIMI_CODE_USAGE_TTL:-60}"
   now_ts=$(date +%s)
